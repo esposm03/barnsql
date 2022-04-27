@@ -1,3 +1,5 @@
+#![feature(iter_intersperse)]
+
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
@@ -22,11 +24,23 @@ impl Deref for Database {
 
 #[allow(dead_code)]
 impl Database {
-    fn create_table(&self, name: &str, attributes: &[&str]) -> Result<(), Box<dyn Error>> {
+    fn create_table(&self, name: &str, columns: &[&str]) -> Result<(), Box<dyn Error>> {
         let tables = self.open_tree("tables")?;
-        tables.insert(name, attributes.join(",").as_str())?;
+        tables.insert(name, columns.join(",").as_str())?;
 
         self.open_tree(name)?;
+        self.flush()?;
+
+        Ok(())
+    }
+
+    fn create_index(&self, table_name: &str, columns: &[&str]) -> Result<(), Box<dyn Error>> {
+        let col_list = columns.join(",");
+        let indexes = self.open_tree("indexes")?;
+        indexes.insert(format!("{table_name}_{col_list}"), &[42])?;
+
+        self.open_tree(format!("index_{table_name}_{col_list}"))?;
+        self.flush()?;
 
         Ok(())
     }
@@ -37,6 +51,7 @@ impl Database {
         row: &HashMap<IVec, IVec>,
     ) -> Result<(), Box<dyn Error>> {
         let table = self.open_tree(table_name)?;
+        let indexes = self.open_tree("indexes")?;
         let cols = self.table_columns(table_name)?;
 
         let key = &row[&cols[0]];
@@ -59,6 +74,34 @@ impl Database {
             )
         }
 
+        for index in indexes.scan_prefix(table_name) {
+            let (orig_index, _) = index?;
+            let index = orig_index.subslice(
+                table_name.len() + 1,
+                orig_index.len() - (table_name.len() + 1),
+            );
+            let index = index.as_ref();
+            println!("index: {}", String::from_utf8(index.to_vec()).unwrap());
+
+            #[rustfmt::skip]
+            let index_key: IVec = index
+                .split(|ch| *ch == b',')
+                .map(|name| &row[name])
+                .intersperse(&IVec::from(&[b',']))
+                .map(|i| i.into_iter())
+                .flatten()
+                .copied()
+                .collect();
+
+            let index_table = self.open_tree(format!(
+                "index_{}",
+                String::from_utf8(orig_index.to_vec()).unwrap(),
+            ))?;
+
+            let res = index_table.insert(index_key, key)?;
+            assert!(res.is_none(), "Index mapping isn't unique");
+        }
+
         Ok(())
     }
 
@@ -74,6 +117,19 @@ impl Database {
 
         let key_value = if let Some(key_value) = where_clause.get(key_name) {
             key_value.clone()
+        } else if let Some(index_name) = self.matches_index(table_name, where_clause)? {
+            let index = self.open_tree(format!("index_{table_name}_{index_name}"))?;
+
+            let index_key: IVec = index_name
+                .split(|ch: char| ch == ',')
+                .map(|name| &where_clause[name.as_bytes()])
+                .intersperse(&IVec::from(&[b',']))
+                .map(|i| i.into_iter())
+                .flatten()
+                .copied()
+                .collect();
+
+            index.get(index_key)?.unwrap()
         } else {
             let mut result_set = HashSet::<IVec>::new();
 
@@ -130,6 +186,33 @@ impl Database {
 
         Ok(vecs)
     }
+
+    fn matches_index(
+        &self,
+        table_name: &str,
+        row: &HashMap<IVec, IVec>,
+    ) -> Result<Option<String>, Box<dyn Error>> {
+        let indexes = self.open_tree("indexes")?;
+
+        for index in indexes.scan_prefix(table_name) {
+            let (orig_index, _) = index?;
+            let index = orig_index.subslice(
+                table_name.len() + 1,
+                orig_index.len() - (table_name.len() + 1),
+            );
+            let index = index.as_ref();
+            println!("index: {}", String::from_utf8(index.to_vec()).unwrap());
+
+            if index
+                .split(|ch| *ch == b',')
+                .all(|col_name| row.contains_key(col_name))
+            {
+                return Ok(Some(String::from_utf8(index.to_vec()).unwrap()));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -149,6 +232,8 @@ mod tests {
 
         db.create_table("docenti", &["nome", "cognome", "sesso"])
             .unwrap();
+
+        db.create_index("docenti", &["cognome"]).unwrap();
 
         let mut docente = HashMap::new();
         docente.insert("nome".into(), "Antonio".into());
@@ -178,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn select_no_key() {
+    fn select_index() {
         let (db, docente) = common();
 
         let res = db
@@ -188,6 +273,20 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+            )
+            .expect("Failed to select");
+
+        assert_eq!(docente, res);
+    }
+
+    #[test]
+    fn select_no_key() {
+        let (db, docente) = common();
+
+        let res = db
+            .select_from(
+                "docenti",
+                &[("sesso".into(), "M".into())].iter().cloned().collect(),
             )
             .expect("Failed to select");
 
