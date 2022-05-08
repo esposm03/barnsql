@@ -1,7 +1,7 @@
-mod tab;
+mod table;
 mod typ;
 mod val;
-pub use tab::Table;
+pub use table::Table;
 pub use typ::Typ;
 pub use val::Val;
 
