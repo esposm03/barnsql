@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use sled::{Db, IVec, Tree};
 
 use crate::{
-    table::{ColumnList, ColumnName, Val},
+    storage::{ColumnList, ColumnName, Val},
     util::{display_ivec, serialize_ivec},
 };
 

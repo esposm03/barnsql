@@ -1,4 +1,7 @@
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    ops::{Add, Div, Mul, Sub},
+};
 
 use super::Typ;
 
@@ -52,6 +55,70 @@ impl Val {
                 Val::String(String::from_utf8(buf).unwrap())
             }
         })
+    }
+}
+
+impl Add for Val {
+    type Output = Val;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.get_type(), rhs.get_type());
+
+        match (self, rhs) {
+            (Val::String(a), Val::String(b)) => Val::String(format!("{a}{b}")),
+            (Val::Number(a), Val::Number(b)) => Val::Number(a + b),
+            _ => unreachable!(),
+        }
+    }
+}
+impl Sub for Val {
+    type Output = Val;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.get_type(), Typ::Number);
+        assert_eq!(rhs.get_type(), Typ::Number);
+
+        match (self, rhs) {
+            (Val::Number(a), Val::Number(b)) => Val::Number(a - b),
+            _ => unreachable!(),
+        }
+    }
+}
+impl Mul for Val {
+    type Output = Val;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.get_type(), Typ::Number);
+        assert_eq!(rhs.get_type(), Typ::Number);
+
+        match (self, rhs) {
+            (Val::Number(a), Val::Number(b)) => Val::Number(a * b),
+            _ => unreachable!(),
+        }
+    }
+}
+impl Div for Val {
+    type Output = Val;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.get_type(), Typ::Number);
+        assert_eq!(rhs.get_type(), Typ::Number);
+
+        match (self, rhs) {
+            (Val::Number(a), Val::Number(b)) => Val::Number(a / b),
+            _ => unreachable!(),
+        }
+    }
+}
+impl PartialOrd for Val {
+    fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
+        assert_eq!(self.get_type(), rhs.get_type());
+
+        match (self, rhs) {
+            (Val::String(a), Val::String(b)) => a.partial_cmp(b),
+            (Val::Number(a), Val::Number(b)) => a.partial_cmp(b),
+            _ => unreachable!(),
+        }
     }
 }
 

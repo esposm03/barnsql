@@ -1,6 +1,6 @@
-mod table;
+mod storage;
 mod util;
-use table::{Table, Typ, Val};
+use storage::{Table, Typ, Val};
 
 use std::error::Error;
 
