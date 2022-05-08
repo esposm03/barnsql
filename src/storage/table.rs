@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    collections::HashMap,
+    io::{self, Write},
+};
 
 use sled::{Db, IVec, Tree};
 
@@ -84,13 +87,45 @@ impl Table {
         Ok(())
     }
 
-    pub fn select(&self, primary_key: Vec<Val>) -> Result<Vec<Val>, sled::Error> {
-        let mut pk = vec![];
-        for pk_col in primary_key {
-            pk_col.serialize(&mut pk)?;
+    pub fn select(&self, expr: WhereExpr) -> Result<Option<Vec<Val>>, sled::Error> {
+        if let Some(serialized_pk) = self.select_by_pk(
+            expr.lookup_by_pk(self)
+                .iter()
+                .cloned()
+                .collect::<HashMap<_, _>>(),
+        ) {
+            let row = self.tree.get(serialized_pk)?.expect("No such row");
+            if let Some(row) = self.satisfies_expr(row, &expr) {
+                return Ok(Some(row));
+            }
+        } else {
+            for val in self.tree.iter() {
+                let (_, row) = val?;
+                if let Some(row) = self.satisfies_expr(row, &expr) {
+                    return Ok(Some(row));
+                }
+            }
+        };
+
+        Ok(None)
+    }
+
+    fn select_by_pk(&self, pk: HashMap<IVec, Val>) -> Option<IVec> {
+        let mut serialized_pk = vec![];
+
+        for pk_col_name in &self.primary_key {
+            if let Some(val) = pk.get(pk_col_name) {
+                val.serialize(&mut serialized_pk)
+                    .expect("Serialization failed");
+            } else {
+                return None;
+            }
         }
 
-        let row = self.tree.get(pk)?.expect("No such row");
+        Some(serialized_pk.into())
+    }
+
+    fn satisfies_expr(&self, row: IVec, expr: &WhereExpr) -> Option<Vec<Val>> {
         let mut reader = row.as_ref();
         let mut deserialized = vec![];
 
@@ -98,6 +133,97 @@ impl Table {
             deserialized.push(val);
         }
 
-        Ok(deserialized)
+        if expr.eval(&deserialized, self).to_bool() {
+            Some(deserialized)
+        } else {
+            None
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum WhereExpr {
+    Column(IVec),
+    Literal(Val),
+
+    // Arithmetic
+    Sum(Box<WhereExpr>, Box<WhereExpr>),
+    Sub(Box<WhereExpr>, Box<WhereExpr>),
+    Mul(Box<WhereExpr>, Box<WhereExpr>),
+    Div(Box<WhereExpr>, Box<WhereExpr>),
+
+    // Logical
+    And(Box<WhereExpr>, Box<WhereExpr>),
+    Or(Box<WhereExpr>, Box<WhereExpr>),
+    Not(Box<WhereExpr>),
+
+    // Comparison
+    Equal(Box<WhereExpr>, Box<WhereExpr>),
+    Gt(Box<WhereExpr>, Box<WhereExpr>),
+    Gte(Box<WhereExpr>, Box<WhereExpr>),
+    Lt(Box<WhereExpr>, Box<WhereExpr>),
+    Lte(Box<WhereExpr>, Box<WhereExpr>),
+}
+
+impl WhereExpr {
+    pub fn eval(&self, row: &[Val], schema: &Table) -> Val {
+        match self {
+            Self::Literal(val) => val.clone(),
+            Self::Column(name) => {
+                let col_index = schema
+                    .col_list
+                    .iter()
+                    .position(|(col_name, _)| col_name == name)
+                    .unwrap();
+
+                row[col_index].clone()
+            }
+
+            // Arithmethic
+            WhereExpr::Sum(a, b) => a.eval(row, schema) + b.eval(row, schema),
+            WhereExpr::Sub(a, b) => a.eval(row, schema) - b.eval(row, schema),
+            WhereExpr::Mul(a, b) => a.eval(row, schema) * b.eval(row, schema),
+            WhereExpr::Div(a, b) => a.eval(row, schema) / b.eval(row, schema),
+
+            // Logical
+            WhereExpr::And(a, b) => {
+                Val::Boolean(a.eval(row, schema).to_bool() && b.eval(row, schema).to_bool())
+            }
+            WhereExpr::Or(_, _) => todo!(),
+            WhereExpr::Not(_) => todo!(),
+
+            // Comparison
+            WhereExpr::Equal(a, b) => Val::Boolean(a.eval(row, schema) == b.eval(row, schema)),
+            WhereExpr::Gt(a, b) => Val::Boolean(a.eval(row, schema) > b.eval(row, schema)),
+            WhereExpr::Gte(a, b) => Val::Boolean(a.eval(row, schema) >= b.eval(row, schema)),
+            WhereExpr::Lt(a, b) => Val::Boolean(a.eval(row, schema) < b.eval(row, schema)),
+            WhereExpr::Lte(a, b) => Val::Boolean(a.eval(row, schema) <= b.eval(row, schema)),
+        }
+    }
+
+    pub fn lookup_by_pk(&self, schema: &Table) -> Vec<(IVec, Val)> {
+        let mut exprs = vec![];
+
+        match self {
+            WhereExpr::Literal(_) => {}
+            WhereExpr::Column(_) => {}
+
+            // Comparison
+            WhereExpr::Equal(box WhereExpr::Column(col), box WhereExpr::Literal(lit)) => {
+                if schema.primary_key.contains(col) {
+                    exprs.push((col.clone(), lit.clone()));
+                }
+            }
+
+            WhereExpr::And(a, b) => {
+                exprs.append(&mut a.lookup_by_pk(schema));
+                exprs.append(&mut b.lookup_by_pk(schema));
+            }
+
+            _ => {}
+        };
+
+        exprs
     }
 }

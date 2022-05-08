@@ -1,7 +1,7 @@
 mod table;
 mod typ;
 mod val;
-pub use table::Table;
+pub use table::{Table, WhereExpr};
 pub use typ::Typ;
 pub use val::Val;
 

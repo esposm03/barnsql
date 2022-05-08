@@ -1,8 +1,12 @@
+#![feature(box_patterns)]
+
 mod storage;
 mod util;
 use storage::{Table, Typ, Val};
 
 use std::error::Error;
+
+use crate::storage::WhereExpr;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut db = sled::Config::new().temporary(true).open()?;
@@ -26,10 +30,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     ])?;
     println!("Insert");
 
-    let res = table.select(vec![
-        Val::String("Antonio".into()),
-        Val::String("Giunta".into()),
-    ])?;
+    let res = table.select(WhereExpr::And(
+        Box::new(WhereExpr::Equal(
+            Box::new(WhereExpr::Column("nome".into())),
+            Box::new(WhereExpr::Literal(Val::String("Antonio".into()))),
+        )),
+        Box::new(WhereExpr::Equal(
+            Box::new(WhereExpr::Column("cognome".into())),
+            Box::new(WhereExpr::Literal(Val::String("Giunta".into()))),
+        )),
+    ))?;
 
     println!("Res: {res:?}");
 

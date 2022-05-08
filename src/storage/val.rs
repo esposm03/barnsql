@@ -9,6 +9,7 @@ use super::Typ;
 pub enum Val {
     String(String),
     Number(i64),
+    Boolean(bool),
 }
 
 impl Val {
@@ -17,6 +18,7 @@ impl Val {
         match self {
             Self::String(_) => Typ::String,
             Self::Number(_) => Typ::Number,
+            Self::Boolean(_) => Typ::Boolean,
         }
     }
 
@@ -29,6 +31,7 @@ impl Val {
                 writer.write_all(s.as_bytes())?;
             }
             Self::Number(i) => writer.write_all(&i.to_le_bytes())?,
+            Self::Boolean(i) => writer.write_all(&[if *i { 0 } else { 1 }])?,
         }
 
         Ok(())
@@ -54,7 +57,20 @@ impl Val {
                 reader.read_exact(&mut buf)?;
                 Val::String(String::from_utf8(buf).unwrap())
             }
+            Typ::Boolean => {
+                let mut buf = [0; 1];
+                reader.read_exact(&mut buf)?;
+                Val::Boolean(buf[0] == 0)
+            }
         })
+    }
+
+    pub fn to_bool(&self) -> bool {
+        if let Val::Boolean(i) = self {
+            *i
+        } else {
+            panic!()
+        }
     }
 }
 
@@ -117,6 +133,7 @@ impl PartialOrd for Val {
         match (self, rhs) {
             (Val::String(a), Val::String(b)) => a.partial_cmp(b),
             (Val::Number(a), Val::Number(b)) => a.partial_cmp(b),
+            (Val::Boolean(a), Val::Boolean(b)) => a.partial_cmp(b),
             _ => unreachable!(),
         }
     }
@@ -143,6 +160,11 @@ mod tests {
         let mut buf = vec![];
         val.serialize(&mut buf).unwrap();
         assert_eq!(vec![0, 6, b'h', b'e', b'l', b'l', b'o', b' '], buf);
+
+        let val = Val::Boolean(true);
+        let mut buf = vec![];
+        val.serialize(&mut buf).unwrap();
+        assert_eq!(vec![2, 0], buf);
     }
 
     #[test]
@@ -154,6 +176,10 @@ mod tests {
         let buf = vec![1, 42, 0, 0, 0, 0, 0, 0, 0];
         let val = Val::deserialize(&mut buf.as_slice()).unwrap();
         assert_eq!(val, Val::Number(42));
+
+        let buf = vec![2, 0];
+        let val = Val::deserialize(&mut buf.as_slice()).unwrap();
+        assert_eq!(val, Val::Boolean(true));
     }
 
     #[test]

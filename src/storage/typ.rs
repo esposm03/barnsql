@@ -3,6 +3,7 @@
 pub enum Typ {
     String = 0,
     Number = 1,
+    Boolean = 2,
 }
 
 impl Typ {
@@ -14,6 +15,7 @@ impl Typ {
         match val {
             0 => Some(Self::String),
             1 => Some(Self::Number),
+            2 => Some(Self::Boolean),
             _ => None,
         }
     }
