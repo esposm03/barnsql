@@ -11,11 +11,11 @@ use crate::{
 };
 
 pub struct Table {
-    name: IVec,
-    col_list: ColumnList,
-    primary_key: Vec<ColumnName>,
+    pub name: IVec,
+    pub col_list: ColumnList,
+    pub primary_key: Vec<ColumnName>,
 
-    tree: Tree,
+    pub tree: Tree,
 }
 
 impl Table {

@@ -1,5 +1,6 @@
 #![feature(box_patterns)]
 
+mod query;
 mod storage;
 mod util;
 use storage::{Table, Typ, Val};
