@@ -1,70 +1,9 @@
-#![allow(dead_code)]
-
+use super::Token;
 use std::collections::HashMap;
 
 use chumsky::prelude::*;
 
-use self::lexer::Token;
-
-pub mod lexer;
-
-pub fn parser() -> impl Parser<char, Expr, Error = Simple<char>> {
-    let expr = recursive(|expr| {
-        let int = text::int(10)
-            .map(|s: String| Expr::Num(s.parse().unwrap()))
-            .padded();
-
-        let call = text::ident()
-            .padded()
-            .then(
-                expr.clone()
-                    .separated_by(just(','))
-                    .allow_leading()
-                    .delimited_by(just('('), just(')')),
-            )
-            .map(|(f, args)| Expr::Call(f, args));
-
-        let atom = int
-            .or(call)
-            .or(text::ident().padded().map(Expr::Ident))
-            .or(expr.delimited_by(just('('), just(')')));
-
-        let op = |c| just(c).padded();
-
-        let unary = op('-')
-            .repeated()
-            .then(atom)
-            .foldr(|_op, rhs| Expr::Neg(Box::new(rhs)));
-
-        let product = unary
-            .clone()
-            .then(
-                op('*')
-                    .to(Expr::Mul as fn(_, _) -> _)
-                    .or(op('/').to(Expr::Div as fn(_, _) -> _))
-                    .then(unary)
-                    .repeated(),
-            )
-            .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
-
-        let sum = product
-            .clone()
-            .then(
-                op('+')
-                    .to(Expr::Add as fn(_, _) -> _)
-                    .or(op('-').to(Expr::Sub as fn(_, _) -> _))
-                    .then(product)
-                    .repeated(),
-            )
-            .foldl(|lhs, (op, rhs)| op(Box::new(lhs), Box::new(rhs)));
-
-        sum
-    });
-
-    expr
-}
-
-pub fn parser2() -> impl Parser<Token, Expr, Error = Simple<Token>> {
+pub fn parser() -> impl Parser<Token, Expr, Error = Simple<Token>> {
     recursive(|expr| {
         let literal = select! {
             Token::Num(n) => Expr::Num(n),
