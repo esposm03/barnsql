@@ -1,55 +1,24 @@
 #![feature(box_patterns)]
 
+mod parser;
 mod query;
 mod storage;
 mod util;
-use storage::{Table, Typ, Val};
+use chumsky::Parser;
+use parser::{eval, parser};
 
 use std::error::Error;
 
-use crate::storage::WhereExpr;
-
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut db = sled::Config::new().temporary(true).open()?;
+    let src = "--42 * 2 - 20";
 
-    let columns = vec![
-        ("nome".into(), Typ::String),
-        ("cognome".into(), Typ::String),
-        ("eta".into(), Typ::Number),
-    ];
-    let table = Table::new(
-        &mut db,
-        "sus".into(),
-        columns,
-        vec!["nome".into(), "cognome".into()],
-    )?;
-
-    table.insert(vec![
-        Val::String("Antonio".into()),
-        Val::String("Giunta".into()),
-        Val::Number(60),
-    ])?;
-    println!("Insert");
-
-    let res = table.select(WhereExpr::And(
-        Box::new(WhereExpr::Equal(
-            Box::new(WhereExpr::Column("nome".into())),
-            Box::new(WhereExpr::Literal(Val::String("Antonio".into()))),
-        )),
-        Box::new(WhereExpr::Equal(
-            Box::new(WhereExpr::Column("cognome".into())),
-            Box::new(WhereExpr::Literal(Val::String("Giunta".into()))),
-        )),
-    ))?;
-
-    println!("Res: {res:?}");
-
-    table.insert(vec![
-        Val::String("Antonio".into()),
-        Val::String("Giunta".into()),
-        Val::Number(60),
-    ])?;
-    println!("Insert");
+    match parser().parse(src) {
+        Ok(expr) => match eval(&expr) {
+            Ok(val) => println!("Output: {val}"),
+            Err(e) => println!("Eval err: {e:?}"),
+        },
+        Err(e) => e.iter().for_each(|e| println!("Parse err: {e:?}")),
+    };
 
     Ok(())
 }
