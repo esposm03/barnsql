@@ -2,18 +2,22 @@
 
 mod parser;
 mod query;
+#[allow(dead_code)]
 mod storage;
 mod util;
 use chumsky::Parser;
-use parser::{eval, parser};
+use parser::{eval, lexer::lexer, parser2};
 
-use std::error::Error;
+use std::{collections::HashMap, error::Error};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let src = "--42 * 2 - 20";
+    let src = "-hello(42, sus)";
+    let mut vars = HashMap::new();
+    vars.insert("hello".into(), 42);
+    vars.insert("sus".into(), 69);
 
-    match parser().parse(src) {
-        Ok(expr) => match eval(&expr) {
+    match parser2().parse(lexer().parse(src).unwrap()) {
+        Ok(expr) => match eval(&expr, &mut vars) {
             Ok(val) => println!("Output: {val}"),
             Err(e) => println!("Eval err: {e:?}"),
         },
